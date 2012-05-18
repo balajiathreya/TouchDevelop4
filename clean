@@ -1,0 +1,6 @@
+sudo rm -f work_table*
+cd patterns
+sudo rm -f *
+cd ../actions
+sudo rm -f *
+cd ..
