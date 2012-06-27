@@ -18,24 +18,26 @@ import java.security.MessageDigest;
 import java.util.*;
 
 public class TouchDevelop {
-    public static TreeMap<String,JsonNode> scripts = new TreeMap<String, JsonNode>();
     public static TreeMap<String,Set<String>> work_table = new TreeMap<String, Set<String>>();
     public static HashSet<String> scriptPairs = new HashSet<String>();
     public static HashSet<String> nodePairs = new HashSet<String>();
+
+    // hashsets to keep track of nodes that are part of some pattern, so that they are not
+    // considered for future patterns(which would be sub-patterns in already found patterns)
     public static HashSet<Integer> index1 = new HashSet<Integer>();
     public static HashSet<Integer> index2 = new HashSet<Integer>();
+
     public static TreeMap<String,JsonNode> patterns = new TreeMap<String,JsonNode>();
     public static ArrayList<String> thingRefs = new ArrayList<String>();
     public static ArrayList<String> operators = new ArrayList<String>();
     public  static String serializedPattern = "serializedPattern";
     public  static String serializedWorkTable = "serializedWorkTable";
     public  static String parentFolderName = "/home/balaji/ast";
-    //public  static String parentFolderName = "/home/balaji/foreach";
 
-    public static int allowedMismatches = 2;
-    public static int minimumPatternSize = 3;
-    public static int minimumDifference = 2;
-    public static int minimumClusterSize = 3;
+    public static int allowedMismatches = 2;    // max no of #s allowed in a pattern
+    public static int minimumPatternSize = 3;   // minimum no of nodes in a pattern
+    public static int minimumDifference = 2;    // minimum difference b/w no of nodes in a pattern and no of #s
+    public static int minimumClusterSize = 3;   // minimum no of occurences of a pattern to be considered as a cluster
 
 
     static {
@@ -48,9 +50,7 @@ public class TouchDevelop {
 
 
     public static void processActionSubtrees(String script1, String script2, JsonNode action1, JsonNode action2,ObjectMapper objectMapper){
-        //ObjectNode pattern = objectMapper.createObjectNode();
-        //pattern.put("aNode",aNode);
-        StringBuffer nodePair = new StringBuffer();
+        StringBuffer nodePair;
         nodePairs.clear();
         JsonNode node1 = action1.get("body");
         JsonNode node2 = action2.get("body");
@@ -62,7 +62,7 @@ public class TouchDevelop {
         while(i < action1Size){
             j = 0;
             JsonNode child1 = (JsonNode) node1.get(i);
-            if(isComment(child1) || index1.contains(i)){
+            if(isComment(child1)){
                 i++;
                 continue;
             }
@@ -74,6 +74,7 @@ public class TouchDevelop {
                     j++;
                     continue;
                 }
+                // check if the nodes are already compared or not. if yes, skip
                 nodePair = nodePair.append(script1).append(child1.hashCode()).append(i).append(script2).append(child2.hashCode()).append(j);
                 if(nodePairs.contains(nodePair.toString())){
                     j++;
@@ -82,32 +83,9 @@ public class TouchDevelop {
                 else {
                     nodePairs.add(nodePair.toString());
                 }
-                /*
-                try{
-                    MessageDigest m = MessageDigest.getInstance("MD5");
-                    m.reset();
-                    m.update(nodePair.toString().getBytes());
-                    byte[] digest = m.digest();
-                    BigInteger bigInt = new BigInteger(1,digest);
-                    String hashtext = bigInt.toString(16);
-                    // Now we need to zero pad it if you actually want the full 32 chars.
-                    while(hashtext.length() < 32 ){
-                        hashtext = "0"+hashtext;
-                    }
-                    if(nodePairs.contains(hashtext)){
-                        j++;
-                        continue;
-                    }
-                    else {
-                        nodePairs.add(hashtext);
-                    }
-                }
-                catch (Exception ex){
-                    ex.printStackTrace;
-                }
-
-*/
+                // if node types are same
                 if( getJsonNodeTypeField(child1) != null && getJsonNodeTypeField(child1).equalsIgnoreCase(getJsonNodeTypeField(child2))){
+                    // if the elements are equal, pass the node indexes to compareNodes
                     if(child1.equals(child2)){
                         compareNodes(objectMapper,script1,script2,action1,action2,i,j);
                     }
@@ -126,8 +104,10 @@ public class TouchDevelop {
 
         int action1Size = node1.size();
         int action2Size = node2.size();
+        
+        int original_i=i;
+        int original_j=j;
 
-        //ObjectNode pattern = objectMapper.createObjectNode();
         ArrayNode pattern = objectMapper.createArrayNode();
         pattern.add(node1.get(i));
 
@@ -149,7 +129,6 @@ public class TouchDevelop {
                     continue;
                 }
                 JsonNode child2 = (JsonNode) node2.get(j);
-                //System.out.println("types: " + getJsonNodeTypeField(child1) + " " + getJsonNodeTypeField(child2));
                 if(isComment(child2)) {
                     j++;
                     continue;
@@ -163,11 +142,10 @@ public class TouchDevelop {
                         pattern.add(child1);
                         index1.add(i);
                         index2.add(j);
-                        //System.out.println("double of "+child1.toString());
                         i++;
                         j++;
                     }
-                    // same type but not equal
+                    // same type but not equal. so add a hash
                     else{
                         ObjectNode hashNode = objectMapper.createObjectNode();
                         hashNode.put(TDStrings.type,"#");
@@ -192,13 +170,10 @@ public class TouchDevelop {
                 pattern = trimPattern(pattern);
                 diff = h - pattern.size();
                 mismatches = mismatches - diff;
-                // no of statements >= 2
-                // no of #s should be less than or equal to 2
-                //  no of nodes in pattern - no of # >= 2.
                 if(mismatches <= allowedMismatches && pattern.size() - mismatches >= minimumDifference){
                     if(pattern.size() >= minimumPatternSize){
                         addPatternToWorkTable(script1, script2, action1.get(TDStrings.actionName).asText(),
-                                action2.get(TDStrings.actionName).asText(), pattern, i, j);
+                                action2.get(TDStrings.actionName).asText(), pattern, original_i, original_j,i, j);
                     }
                     return;
                 }
@@ -216,67 +191,44 @@ public class TouchDevelop {
 
 
     public static void main(String[] args){
-        //load stuff from serialized file
-        //readPatternsFromFile();
-        //readWorkTableFromFile();
         if(patterns == null)
             patterns = new TreeMap<String,JsonNode>();
 
         if(work_table == null)
             work_table = new TreeMap<String, Set<String>>();
 
-        if(patterns.size() != 0 && work_table.size() != 0){
-            System.out.println("adaaaaaaaaaaaaaaa");
-        }
         ObjectMapper m = new ObjectMapper();
         m.configure(SerializationConfig.Feature.INDENT_OUTPUT,true);
         File parentFolder = new File(parentFolderName);
-        //File parentFolder = new File("/home/balaji/foreach");
+        parentFolder.mkdir();
+
         File[] files = parentFolder.listFiles();
         int i = 0;
         for (File file1: files){
             for (File file2 : files){
                 String f1 = file1.getName();
                 String f2 = file2.getName();
+                //check if the files are alredy compared or not
                 if(f1.equals(f2) || scriptPairs.contains(f1+f2) || scriptPairs.contains(f2+f1)){
                     continue;
                 }
                 else {
                     try{
-                        /*
-                        //String file1 = "/home/balaji/vlhj";
-                        //String file1 = "/home/balaji/vpzd";
-                        String file1 = "/home/balaji/wbxsa";
-                        //String file2 = "/home/balaji/tabh";
-                        //String file2 = "/home/balaji/ggae";
-                        String file2 = "/home/balaji/eeco";
-                          */
                         System.out.println(i++);
                         JsonNode rootNode1 = m.readTree(file1);
-                        //JsonNode rootNode2 = m.readTree(new File("/home/balaji/tabh"));
                         JsonNode rootNode2 = m.readTree(file2);
                         JsonNode script1Actions;
                         JsonNode script2Actions;
+                        //getActions returns just the action nodes with unwanted informationn stripped out
+                        script1Actions = getActions(f1,rootNode1,m);
+                        script2Actions = getActions(f2,rootNode2,m);
 
-                        if(scripts.containsKey(f1)){
-                            script1Actions = scripts.get(f1);
-                        }
-                        else {
-                            script1Actions = getActions(f1,rootNode1,m);
-                            //scripts.put(f1,script1Actions);
-                        }
-
-                        if(scripts.containsKey(f2)){
-                            script2Actions = scripts.get(f2);
-                        }
-                        else {
-                            script2Actions = getActions(f2,rootNode2,m);
-                            //scripts.put(f2,script2Actions);
-                        }
-
+                        // if aNode is null, then there are no action elements
                         if(script1Actions.get("aNode") == null || script2Actions.get("aNode") == null){
                             return;
                         }
+
+                        // compare every action of f1 with every action of f2
 
                         Iterator it1 = script1Actions.get("aNode").getElements();
 
@@ -285,14 +237,9 @@ public class TouchDevelop {
                             Iterator it2 = script2Actions.get("aNode").getElements();
                             while(it2.hasNext()){
                                 JsonNode action2 = (JsonNode)it2.next();
-                                /*
-                                System.out.println("Comparing actions: " + f1 + ":" +
-                                        action1.get(TDStrings.actionName) + " and " + f2 + ":" +
-                                        action2.get(TDStrings.actionName));
-                                        */
                                 index1.clear();
                                 index2.clear();
-
+                                // comaprision
                                 processActionSubtrees(f1, f2, action1, action2,m);
                             }
                         }
@@ -325,7 +272,7 @@ public class TouchDevelop {
         while (it.hasNext()) {
             try{
                 Map.Entry pairs = (Map.Entry)it.next();
-                //new File("/home/balaji/1-patterns/"+pairs.getKey().toString()).createNewFile();
+                new File("patterns").mkdir();
                 new File("patterns/"+pairs.getKey().toString()).createNewFile();
                 File f =  new File("patterns/"+pairs.getKey().toString());
                 f.createNewFile();
@@ -334,7 +281,6 @@ public class TouchDevelop {
                 JsonNode n = (JsonNode)pairs.getValue();
                 out.write(writer.writeValueAsString(n));
                 out.close();
-                //m.writeValue(f, pairs.getValue());
             }
             catch (Exception e){
                 e.printStackTrace();
@@ -358,7 +304,6 @@ public class TouchDevelop {
                     out.write(it2.next().toString()+"\n\t");
                 }
                 out.write("\n");
-                //f.createNewFile();
             }
             out.close();
         }
@@ -368,18 +313,13 @@ public class TouchDevelop {
 
         System.out.println("Done!\n");
         System.out.println("total patterns : "+work_table.size()+"\n");
-        //serializePattern();
-        //serializeWorkTable();
 
     }
 
-    public static void addPatternToWorkTable(String script1, String script2, String action1, String action2, ArrayNode pattern, int i, int j){
+    public static void addPatternToWorkTable(String script1, String script2, String action1, String action2, ArrayNode pattern, int start1, int start2, int end1, int end2){
         try{
-            int start1,start2, end1, end2;
-            end1 = i - 1;
-            end2 = j - 1;
-            start1 = i - pattern.size();
-            start2 = j - pattern.size();
+            --end1;
+            --end2;
             MessageDigest m = MessageDigest.getInstance("MD5");
             m.reset();
             m.update(pattern.toString().getBytes());
@@ -416,26 +356,26 @@ public class TouchDevelop {
         return pattern;
 
     }
+
     public static JsonNode getActions(String fileName, JsonNode rootNode,ObjectMapper objectMapper){
+        // get things node. It contains all actions
         JsonNode things = rootNode.get(TDStrings.things);
+
+        //create a new JsonNode object
         ObjectNode oNode = objectMapper.createObjectNode();
         // node contain all actions
         ArrayNode aNode = objectMapper.createArrayNode();
         oNode.put("scriptName",fileName);
         oNode.put("aNode",aNode);
-        // add the name of the script
-        if("hvch".equalsIgnoreCase(fileName) || "iqri".equalsIgnoreCase(fileName)){
-            System.out.print(fileName);
-        }
 
         Iterator it1 = things.getElements();
         while (it1.hasNext()){
             JsonNode node1 = (JsonNode)it1.next();
             ObjectNode actionNode = objectMapper.createObjectNode();
 
-            actionNode.put("actionName",node1.get(TDStrings.name).asText().replaceAll("\"", ""));
             if(node1.isContainerNode() && node1.get("type") != null &&
                     node1.get("type").asText().equalsIgnoreCase("action")){
+                actionNode.put("actionName",node1.get(TDStrings.name).asText().replaceAll("\"", ""));
                 JsonNode actionBody = node1.get("body");
                 actionNode.put("body",cleanActionBody(actionBody,objectMapper));
                 aNode.add(actionNode);
@@ -443,7 +383,9 @@ public class TouchDevelop {
         }
         FileWriter fstream;
         BufferedWriter out;
+        //pretty print the action to a file
         ObjectWriter writer = objectMapper.writerWithDefaultPrettyPrinter();
+        new File("actions").mkdir();
         try{
             new File("actions/"+fileName).createNewFile();
             File f =  new File("actions/"+fileName);
@@ -452,8 +394,6 @@ public class TouchDevelop {
             out = new BufferedWriter(fstream);
             out.write(writer.writeValueAsString(oNode));
             out.close();
-            //f.createNewFile();
-            //objectMapper.writeValue(f, oNode);
         }
 
         catch (Exception ex){
@@ -614,6 +554,23 @@ public class TouchDevelop {
         }
 
     }
+    public static String getJsonNodeTypeField(JsonNode node){
+        return node.get(TDStrings.type).asText();
+    }
+
+    public static boolean  isComment(JsonNode node){
+        return getJsonNodeTypeField(node).equalsIgnoreCase(TDStrings.comment);
+    }
+
+    // unused functions
+
+    public static boolean  isCompoundNode(JsonNode node){
+        return getJsonNodeTypeField(node).equalsIgnoreCase(TDStrings.whileRef);
+    }
+    public static boolean  isExprStatement(JsonNode node){
+        return getJsonNodeTypeField(node).equalsIgnoreCase(TDStrings.exprStmt);
+    }
+
     public static void readWorkTableFromFile(){
         try{
             System.out.println("Reading serializedWorkTable file");
@@ -697,21 +654,6 @@ public class TouchDevelop {
         }
     }
 
-
-    public static String getJsonNodeTypeField(JsonNode node){
-        return node.get(TDStrings.type).asText();
-    }
-
-    public static boolean  isComment(JsonNode node){
-        return getJsonNodeTypeField(node).equalsIgnoreCase(TDStrings.comment);
-    }
-
-    public static boolean  isCompoundNode(JsonNode node){
-        return getJsonNodeTypeField(node).equalsIgnoreCase(TDStrings.whileRef);
-    }
-    public static boolean  isExprStatement(JsonNode node){
-        return getJsonNodeTypeField(node).equalsIgnoreCase(TDStrings.exprStmt);
-    }
 
 
 }
